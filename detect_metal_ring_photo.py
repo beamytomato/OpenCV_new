@@ -5,6 +5,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 import sys
+import threading
 import traceback
 from types import SimpleNamespace
 import time
@@ -1725,7 +1726,7 @@ COMBINED_GUI_PAGE = r"""<!doctype html>
     </nav>
   </header>
   <iframe id="metalFrame" class="active" src="/metal"></iframe>
-  <iframe id="alignmentFrame" src="/alignment"></iframe>
+  <iframe id="alignmentFrame" data-src="/alignment"></iframe>
   <script>
     const tabs = [
       ['metalTab', 'metalFrame'],
@@ -1733,6 +1734,8 @@ COMBINED_GUI_PAGE = r"""<!doctype html>
     ];
     for (const [buttonId, frameId] of tabs) {
       document.getElementById(buttonId).onclick = () => {
+        const frame = document.getElementById(frameId);
+        if (!frame.src && frame.dataset.src) frame.src = frame.dataset.src;
         for (const [b, f] of tabs) {
           document.getElementById(b).classList.toggle('active', b === buttonId);
           document.getElementById(f).classList.toggle('active', f === frameId);
@@ -2240,7 +2243,7 @@ def run_gui_server(
     print(f"Metal ring GUI running at {url}")
     print("Press Control+C in this terminal to stop the server.")
     if open_browser:
-        webbrowser.open(url)
+        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
