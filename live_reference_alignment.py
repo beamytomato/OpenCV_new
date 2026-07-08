@@ -1,5 +1,4 @@
 import argparse
-import cgi
 import json
 import math
 import threading
@@ -10,6 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import cv2
+from local_form import FieldStorage
 import numpy as np
 
 # Match-quality gates for deciding whether guidance is trustworthy.
@@ -2461,7 +2461,7 @@ class AlignmentRequestHandler(BaseHTTPRequestHandler):
     def handle_reference_upload(self):
         content_type = self.headers.get("Content-Type", "")
         if content_type.startswith("multipart/form-data"):
-            form = cgi.FieldStorage(
+            form = FieldStorage(
                 fp=self.rfile,
                 headers=self.headers,
                 environ={

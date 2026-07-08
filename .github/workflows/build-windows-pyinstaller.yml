@@ -31,6 +31,7 @@ jobs:
             --clean `
             --name OpenCVClinicalTools `
             --paths "." `
+            --hidden-import local_form `
             --hidden-import live_reference_alignment `
             --hidden-import cv2 `
             --hidden-import numpy `

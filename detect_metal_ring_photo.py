@@ -1,19 +1,22 @@
 import argparse
 import base64
-import cgi
 import errno
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
+import sys
+import traceback
 from types import SimpleNamespace
 import time
 from datetime import datetime
 from pathlib import Path
 import urllib.parse
 import uuid
+import webbrowser
 
 import cv2
 import live_reference_alignment as alignment_gui
+from local_form import FieldStorage
 import numpy as np
 
 
@@ -2048,7 +2051,7 @@ class MetalRingGuiHandler(SimpleHTTPRequestHandler):
     def handle_alignment_reference_upload(self):
         content_type = self.headers.get("Content-Type", "")
         if content_type.startswith("multipart/form-data"):
-            form = cgi.FieldStorage(
+            form = FieldStorage(
                 fp=self.rfile,
                 headers=self.headers,
                 environ={
@@ -2091,7 +2094,7 @@ class MetalRingGuiHandler(SimpleHTTPRequestHandler):
                 break
 
     def read_analysis_request(self):
-        form = cgi.FieldStorage(
+        form = FieldStorage(
             fp=self.rfile,
             headers=self.headers,
             environ={
@@ -2205,7 +2208,13 @@ class CombinedGuiServer(ThreadingHTTPServer):
         self.state = alignment_state
 
 
-def run_gui_server(host="127.0.0.1", port=8501, alignment_reference=None, camera_index=0):
+def run_gui_server(
+    host="127.0.0.1",
+    port=8502,
+    alignment_reference=None,
+    camera_index=0,
+    open_browser=False,
+):
     """Start the built-in local browser GUI."""
     alignment_args = create_alignment_args(
         host,
@@ -2230,6 +2239,8 @@ def run_gui_server(host="127.0.0.1", port=8501, alignment_reference=None, camera
     url = f"http://{host}:{port}"
     print(f"Metal ring GUI running at {url}")
     print("Press Control+C in this terminal to stop the server.")
+    if open_browser:
+        webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -2261,8 +2272,8 @@ def parse_arguments():
     parser.add_argument(
         "--port",
         type=int,
-        default=8501,
-        help="Port for --gui. Default: 8501.",
+        default=8502,
+        help="Port for --gui. Default: 8502.",
     )
     parser.add_argument(
         "--alignment-reference",
@@ -2325,6 +2336,10 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
+    running_as_packaged_app = getattr(sys, "frozen", False)
+
+    if running_as_packaged_app and len(sys.argv) == 1:
+        args.gui = True
 
     if args.gui:
         run_gui_server(
@@ -2332,6 +2347,7 @@ def main():
             port=args.port,
             alignment_reference=args.alignment_reference,
             camera_index=args.camera_index,
+            open_browser=running_as_packaged_app,
         )
         return
 
@@ -2368,4 +2384,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        traceback.print_exc()
+        if getattr(sys, "frozen", False) and sys.platform.startswith("win"):
+            input("The app hit an error. Press Enter to close this window...")
+        raise

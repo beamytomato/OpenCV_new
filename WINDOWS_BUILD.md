@@ -53,6 +53,8 @@ Open the extracted OpenCVClinicalTools folder
 Double-click OpenCVClinicalTools.exe
 ```
 
+When double-clicked, the packaged app starts the local GUI automatically and opens the browser.
+
 Important:
 
 - Do not run `OpenCVClinicalTools.exe` directly from the zip preview.
@@ -72,3 +74,14 @@ python311.dll was not found
 - The workflow uses Python 3.11 on `windows-latest`.
 - The local GUI is served by `detect_metal_ring_photo.py`.
 - The app creates or uses relative output folders such as `output/` next to the running app when saving is enabled.
+
+## Troubleshooting
+
+If a black console window opens and immediately closes, common causes are:
+
+- the app was run directly from the zip preview instead of an extracted folder
+- `OpenCVClinicalTools.exe` was moved away from its `_internal` folder
+- an older build was created before the packaged app defaulted to GUI mode
+- the local GUI port is already in use
+
+Rebuild and download a fresh artifact after this update. The current app keeps the error visible on Windows if startup fails.
