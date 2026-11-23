@@ -122,9 +122,9 @@ def load_image(image_path):
     return image
 
 
-def capture_webcam_photo(camera_index=0, capture_path=None):
+def capture_webcam_photo(camera_index=0, capture_path=None, output_dir=None):
     """Open a webcam preview and capture one frame when the user presses c."""
-    output_dir = Path("output")
+    output_dir = resolve_output_dir(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if capture_path is None:
@@ -1399,10 +1399,16 @@ def manually_label_mole_landmarks(base_image, max_landmarks=MAX_MOLE_LANDMARKS):
     return state["landmarks"]
 
 
-def save_manual_landmarks(image_path, landmarks):
+def resolve_output_dir(output_dir=None):
+    """Return a writable output directory, accepting relative or absolute paths."""
+    value = str(output_dir or "output").strip() or "output"
+    return Path(value).expanduser()
+
+
+def save_manual_landmarks(image_path, landmarks, output_dir=None):
     """Save manually drawn landmarks as JSON next to the annotated output."""
     image_path = Path(image_path)
-    output_dir = Path("output")
+    output_dir = resolve_output_dir(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{image_path.stem}_manual_landmarks.json"
     records = []
@@ -1424,13 +1430,13 @@ def save_manual_landmarks(image_path, landmarks):
     return path
 
 
-def save_outputs(image_path, annotated, debug, save_images=False):
+def save_outputs(image_path, annotated, debug, save_images=False, output_dir=None):
     """Save the annotated image and debug images."""
     if not save_images:
         return None, {}
 
     image_path = Path(image_path)
-    output_dir = Path("output")
+    output_dir = resolve_output_dir(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     annotated_path = output_dir / f"{image_path.stem}_metal_ring_annotated.jpg"
@@ -1518,7 +1524,11 @@ def process_image(image, image_path, args):
             max_landmarks=max(0, args.max_moles),
         )
         if args.save_images:
-            manual_path = save_manual_landmarks(image_path, mole_landmarks)
+            manual_path = save_manual_landmarks(
+                image_path,
+                mole_landmarks,
+                output_dir=args.output_dir,
+            )
             print(f"Saved manual landmarks: {manual_path}")
         annotated = annotate_mole_landmarks(annotated, mole_landmarks)
     elif not args.no_moles:
@@ -1535,6 +1545,7 @@ def process_image(image, image_path, args):
         annotated,
         debug,
         save_images=args.save_images,
+        output_dir=args.output_dir,
     )
     return detection, mole_landmarks, debug, annotated, annotated_path, debug_paths
 
@@ -1559,7 +1570,7 @@ def image_path_to_url(path):
     try:
         relative = path.resolve().relative_to(Path.cwd().resolve())
     except ValueError:
-        relative = path
+        return None
     return "/" + urllib.parse.quote(str(relative).replace("\\", "/"))
 
 
@@ -1596,6 +1607,7 @@ def process_gui_image(
     max_moles,
     manual_boxes,
     save_images=False,
+    output_dir=None,
 ):
     """Run the detector for the localhost GUI without opening OpenCV windows."""
     ring_skipped = ring_mode == "skip"
@@ -1622,7 +1634,11 @@ def process_gui_image(
         if max_moles >= 0:
             mole_landmarks = mole_landmarks[:max_moles]
         if save_images:
-            manual_landmarks_path = save_manual_landmarks(image_path, mole_landmarks)
+            manual_landmarks_path = save_manual_landmarks(
+                image_path,
+                mole_landmarks,
+                output_dir=output_dir,
+            )
         annotated = annotate_mole_landmarks(annotated, mole_landmarks)
 
     annotated_path, debug_paths = save_outputs(
@@ -1630,6 +1646,7 @@ def process_gui_image(
         annotated,
         debug,
         save_images=save_images,
+        output_dir=output_dir,
     )
     return {
         "detection": detection,
@@ -1677,25 +1694,31 @@ def detection_to_gui_summary(result, landmark_mode):
             }
         )
 
-    debug_urls = {
-        name: image_path_to_url(path)
-        for name, path in result["debug_paths"].items()
+    debug_urls = {}
+    for name, path in result["debug_paths"].items():
+        url = image_path_to_url(path)
+        if url is not None:
+            debug_urls[name] = url
+
+    annotated_url = image_to_data_url(result["annotated"])
+    saved_paths = {
+        "annotated": str(result["annotated_path"]) if result["annotated_path"] else "",
+        "debug": {name: str(path) for name, path in result["debug_paths"].items()},
     }
-    annotated_url = (
-        image_path_to_url(result["annotated_path"])
-        if result["annotated_path"] is not None
-        else image_to_data_url(result["annotated"])
-    )
     payload = {
         "ring": ring,
         "landmark_mode": landmark_mode,
         "landmarks": landmark_records,
         "annotated_url": annotated_url,
         "debug_urls": debug_urls,
+        "saved_paths": saved_paths,
         "saved_outputs": bool(result["save_images"]),
     }
     if result["manual_landmarks_path"] is not None:
-        payload["manual_landmarks_url"] = image_path_to_url(result["manual_landmarks_path"])
+        manual_url = image_path_to_url(result["manual_landmarks_path"])
+        if manual_url is not None:
+            payload["manual_landmarks_url"] = manual_url
+        payload["saved_paths"]["manual_landmarks"] = str(result["manual_landmarks_path"])
     return payload
 
 
@@ -1764,7 +1787,7 @@ GUI_PAGE = r"""<!doctype html>
     h2 { font-size:15px; margin:0 0 12px; }
     label { display:block; font-size:13px; font-weight:600; margin:12px 0 6px; color:#314154; }
     input, select, button { font:inherit; }
-    input[type=file], input[type=number], select { width:100%; border:1px solid var(--line); border-radius:6px; padding:9px; background:#fff; }
+    input[type=file], input[type=number], input[type=text], select { width:100%; border:1px solid var(--line); border-radius:6px; padding:9px; background:#fff; }
     button { border:1px solid #0f766e; background:var(--accent); color:white; border-radius:6px; padding:9px 11px; cursor:pointer; font-weight:650; }
     button.secondary { background:#fff; color:var(--accent); }
     button.warn { border-color:var(--warn); color:var(--warn); background:#fff; }
@@ -1823,6 +1846,9 @@ GUI_PAGE = r"""<!doctype html>
       <label>Maximum landmarks</label>
       <input id="maxMoles" type="number" min="0" max="30" value="7">
       <label><input id="saveImages" type="checkbox"> Save output images</label>
+      <label>Output directory</label>
+      <input id="outputDir" type="text" value="output" placeholder="/Users/yourname/Desktop/results">
+      <div class="hint">Use a relative folder like output, or a full path anywhere on this computer.</div>
       <div class="row" style="margin-top:14px;">
         <button type="button" id="runButton">Run labeling</button>
         <button type="button" class="warn" id="undoBox">Undo box</button>
@@ -1939,6 +1965,7 @@ document.getElementById('runButton').onclick = async () => {
   form.append('landmark_mode', document.getElementById('landmarkMode').value);
   form.append('max_moles', document.getElementById('maxMoles').value);
   form.append('save_images', document.getElementById('saveImages').checked ? '1' : '0');
+  form.append('output_dir', document.getElementById('outputDir').value);
   form.append('manual_boxes', JSON.stringify(boxes));
   if (sourceFile) form.append('image', sourceFile); else form.append('image_data', sourceDataUrl);
   setStatus('Running detector...');
@@ -1951,7 +1978,8 @@ document.getElementById('runButton').onclick = async () => {
   document.getElementById('ringCenter').textContent = data.ring.detected ? data.ring.center.join(', ') : '-';
   document.getElementById('landmarkTable').innerHTML = '<tr><th>Label</th><th>Center</th><th>Box</th></tr>' + data.landmarks.map(l => `<tr><td>${l.label}</td><td>${l.center.join(', ')}</td><td>${l.bbox.join(', ')}</td></tr>`).join('');
   document.getElementById('debugLinks').innerHTML = Object.entries(data.debug_urls).map(([k,v]) => `<a href="${v}" target="_blank">${k}</a>`).join('');
-  setStatus(data.saved_outputs ? 'Done. Annotated image and debug outputs saved in output/.' : 'Done. Preview generated without saving output images.');
+  const savedPath = data.saved_paths && data.saved_paths.annotated ? data.saved_paths.annotated : '';
+  setStatus(data.saved_outputs ? 'Done. Saved annotated image: ' + savedPath : 'Done. Preview generated without saving output images.');
 };
 drawManualCanvas();
 </script>
@@ -2107,7 +2135,8 @@ class MetalRingGuiHandler(SimpleHTTPRequestHandler):
         )
         run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
         save_images = form.getfirst("save_images", "0") == "1"
-        upload_dir = Path("output") / "gui_uploads"
+        output_dir = resolve_output_dir(form.getfirst("output_dir", "output"))
+        upload_dir = output_dir / "gui_uploads"
         if save_images:
             upload_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2163,6 +2192,7 @@ class MetalRingGuiHandler(SimpleHTTPRequestHandler):
             "max_moles": max(0, max_moles),
             "manual_boxes": manual_boxes,
             "save_images": save_images,
+            "output_dir": output_dir,
         }
 
     def send_json(self, payload, status=200):
@@ -2298,6 +2328,11 @@ def parse_arguments():
         help="Optional path for the raw webcam capture. Default: output/webcam_capture_TIMESTAMP.jpg.",
     )
     parser.add_argument(
+        "--output-dir",
+        default="output",
+        help="Directory for saved captures, annotated images, debug images, and manual landmark JSON. Default: output.",
+    )
+    parser.add_argument(
         "--show",
         action="store_true",
         help="Show the annotated image and debug mask in OpenCV windows.",
@@ -2361,6 +2396,7 @@ def main():
         image, image_path = capture_webcam_photo(
             camera_index=args.camera_index,
             capture_path=args.capture_path,
+            output_dir=args.output_dir,
         )
     else:
         if args.image_path is None:

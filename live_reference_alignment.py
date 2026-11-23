@@ -1646,9 +1646,15 @@ def draw_match_debug_view(
     return debug_view
 
 
+def resolve_output_dir(output_dir):
+    """Return a writable output directory from a GUI or CLI path string."""
+    value = str(output_dir or "output").strip() or "output"
+    return Path(value).expanduser()
+
+
 def save_alignment_outputs(display, live_frame, output_dir):
     """Save the current displayed alignment view and raw live frame."""
-    output_path = Path(output_dir)
+    output_path = resolve_output_dir(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1851,46 +1857,25 @@ WEB_APP_HTML = r"""<!doctype html>
         <h2>View and Overlay</h2>
         <div class="grid">
           <label class="check"><input id="overlayMode" type="checkbox" checked> Overlay mode</label>
-          <label class="check"><input id="showText" type="checkbox"> Show image text</label>
-          <label class="check"><input id="matchDebugMode" type="checkbox"> Match debug</label>
-          <label>Match mode
-            <select id="matchMode">
-              <option value="orb">ORB landmarks</option>
-              <option value="markers">Marker dots</option>
-            </select>
-          </label>
           <label class="wide">Overlay opacity <input id="alpha" type="range" min="0" max="1" step="0.01" value="0.50"></label>
-          <label class="wide">Live scale <input id="scale" type="range" min="10" max="200" step="1" value="100"></label>
-          <label>X offset <input id="xOffset" type="number" value="0"></label>
-          <label>Y offset <input id="yOffset" type="number" value="0"></label>
-          <button class="wide" id="resetAlignment">Reset Alignment</button>
         </div>
-      </section>
-
-      <section>
-        <h2>Alignment Feedback</h2>
-        <div class="metric"><span>Score</span><strong id="score">--</strong></div>
-        <div class="metric"><span>Scale</span><strong id="metricScale">--</strong></div>
-        <div class="metric"><span>Rotation</span><strong id="rotation">--</strong></div>
-        <div class="metric"><span>Guidance</span><strong id="guidance">Waiting for live alignment data.</strong></div>
-        <div class="metric"><span>Status</span><strong id="alignmentStatus">stopped</strong></div>
       </section>
 
       <section>
         <h2>Save / Output</h2>
         <div class="grid">
-          <label class="wide">Output folder <input id="outputDir" type="text" value="output"></label>
+          <label class="wide">Output directory <input id="outputDir" type="text" value="output" placeholder="/Users/yourname/Desktop/results"></label>
           <button id="saveView">Save Alignment View</button>
           <button id="saveLive">Save Live Frame</button>
         </div>
+        <div class="hint">Use a relative directory like output, or a full path anywhere on this computer.</div>
         <div class="message" id="saveMessage"></div>
       </section>
     </aside>
   </main>
   <script>
     const ids = [
-      "camera", "fps", "captureWidth", "captureHeight", "overlayMode", "showText",
-      "matchDebugMode", "matchMode", "alpha", "scale", "xOffset", "yOffset", "outputDir"
+      "camera", "fps", "captureWidth", "captureHeight", "overlayMode", "alpha", "outputDir"
     ];
 
     function value(id) {
@@ -1912,6 +1897,12 @@ WEB_APP_HTML = r"""<!doctype html>
     function collectControls() {
       const data = {};
       ids.forEach(id => data[id] = value(id));
+      data.showText = false;
+      data.matchDebugMode = false;
+      data.matchMode = "orb";
+      data.scale = 100;
+      data.xOffset = 0;
+      data.yOffset = 0;
       return data;
     }
 
@@ -1922,16 +1913,9 @@ WEB_APP_HTML = r"""<!doctype html>
     }
 
     ids.forEach(id => document.getElementById(id).addEventListener("input", sendControlsSoon));
-    document.getElementById("matchMode").addEventListener("change", sendControlsSoon);
 
     document.getElementById("startCamera").onclick = async () => postJSON("/api/start", collectControls());
     document.getElementById("stopCamera").onclick = async () => postJSON("/api/stop");
-    document.getElementById("resetAlignment").onclick = async () => {
-      document.getElementById("scale").value = 100;
-      document.getElementById("xOffset").value = 0;
-      document.getElementById("yOffset").value = 0;
-      await postJSON("/api/reset", collectControls());
-    };
     document.getElementById("saveView").onclick = async () => {
       const data = await postJSON("/api/save-view", collectControls());
       document.getElementById("saveMessage").textContent = data.message || "";
@@ -1954,16 +1938,7 @@ WEB_APP_HTML = r"""<!doctype html>
       const tag = event.target.tagName.toLowerCase();
       if (tag === "input" || tag === "select") return;
       if (event.key === "o") document.getElementById("overlayMode").click();
-      if (event.key === "m") document.getElementById("matchDebugMode").click();
-      if (event.key === "b") {
-        const mode = document.getElementById("matchMode");
-        mode.value = mode.value === "orb" ? "markers" : "orb";
-        document.getElementById("matchDebugMode").checked = true;
-        sendControlsSoon();
-      }
-      if (event.key === "t") document.getElementById("showText").click();
       if (event.key === "s") document.getElementById("saveView").click();
-      if (event.key === "r") document.getElementById("resetAlignment").click();
       if (event.key === "q" || event.key === "Escape") postJSON("/api/stop");
     });
 
@@ -1973,11 +1948,6 @@ WEB_APP_HTML = r"""<!doctype html>
         const state = await response.json();
         document.getElementById("topStatus").textContent = state.camera_status;
         document.getElementById("referencePath").textContent = state.reference_path || "No reference loaded.";
-        document.getElementById("score").textContent = state.score;
-        document.getElementById("metricScale").textContent = state.scale;
-        document.getElementById("rotation").textContent = state.rotation;
-        document.getElementById("guidance").textContent = state.guidance;
-        document.getElementById("alignmentStatus").textContent = state.alignment_status;
       } catch (error) {
         document.getElementById("topStatus").textContent = "Server connection lost.";
       }
@@ -2191,7 +2161,13 @@ class AlignmentWebState:
     def render_display(self):
         with self.lock:
             if self.reference is None:
-                return self.placeholder_image("Load a reference image to begin.")
+                frame = self.read_frame()
+                if frame is None:
+                    return self.placeholder_image("Load a reference image to begin.")
+                self.last_summary = None
+                self.last_visual_summary = None
+                self.last_display = frame.copy()
+                return frame
 
             frame = self.read_frame()
             if frame is None:
@@ -2333,7 +2309,7 @@ class AlignmentWebState:
         with self.lock:
             if self.last_display is None:
                 return "No alignment view is available to save."
-            output_path = Path(self.output_dir)
+            output_path = resolve_output_dir(self.output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             path = output_path / f"alignment_view_{timestamp}.jpg"
@@ -2344,7 +2320,7 @@ class AlignmentWebState:
         with self.lock:
             if self.last_live_frame is None:
                 return "No live frame is available to save."
-            output_path = Path(self.output_dir)
+            output_path = resolve_output_dir(self.output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             path = output_path / f"aligned_live_frame_{timestamp}.jpg"
@@ -2354,7 +2330,13 @@ class AlignmentWebState:
     def state_payload(self):
         with self.lock:
             summary = self.last_summary
-            if summary is None:
+            if self.reference is None:
+                score = "--"
+                scale_text = "--"
+                rotation_text = "--"
+                guidance = "Camera preview only. Load a reference image to begin alignment."
+                alignment_status = "waiting for reference"
+            elif summary is None:
                 score = "--"
                 scale_text = "--"
                 rotation_text = "--"
