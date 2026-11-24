@@ -295,7 +295,7 @@ def select_reference_draw_mask(reference):
     print("Draw a reference mask around the hand/skin target.")
     print("Brush mode: left-drag paints, right-drag erases, [ and ] change brush size.")
     print("Polygon mode: press P, left-click points, U/right-click undo, F fills polygon.")
-    print("Press ENTER or SPACE to accept. Press Q or ESC to cancel.")
+    print("Press ENTER or SPACE to accept.  Press Q or ESC to cancel.")
 
     cv2.namedWindow(DRAW_MASK_WINDOW, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(DRAW_MASK_WINDOW, reference.shape[1], min(reference.shape[0], 900))
@@ -1648,8 +1648,8 @@ def draw_match_debug_view(
 
 def resolve_output_dir(output_dir):
     """Return a writable output directory from a GUI or CLI path string."""
-    value = str(output_dir or "output").strip() or "output"
-    return Path(value).expanduser()
+    value = str(output_dir or "").strip()
+    return Path(value).expanduser() if value else Path.home() / "Desktop" / "output_images"
 
 
 def save_alignment_outputs(display, live_frame, output_dir):
@@ -1864,11 +1864,10 @@ WEB_APP_HTML = r"""<!doctype html>
       <section>
         <h2>Save / Output</h2>
         <div class="grid">
-          <label class="wide">Output directory <input id="outputDir" type="text" value="output" placeholder="/Users/yourname/Desktop/results"></label>
-          <button id="saveView">Save Alignment View</button>
-          <button id="saveLive">Save Live Frame</button>
+          <label class="wide">Output directory <input id="outputDir" type="text" value="" placeholder="Desktop/output_images"></label>
+          <button class="primary" id="saveView">Save Alignment View</button>
+          <button class="primary" id="saveLive">Save Live Frame</button>
         </div>
-        <div class="hint">Use a relative directory like output, or a full path anywhere on this computer.</div>
         <div class="message" id="saveMessage"></div>
       </section>
     </aside>

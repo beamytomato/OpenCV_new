@@ -1401,8 +1401,8 @@ def manually_label_mole_landmarks(base_image, max_landmarks=MAX_MOLE_LANDMARKS):
 
 def resolve_output_dir(output_dir=None):
     """Return a writable output directory, accepting relative or absolute paths."""
-    value = str(output_dir or "output").strip() or "output"
-    return Path(value).expanduser()
+    value = str(output_dir or "").strip()
+    return Path(value).expanduser() if value else Path.home() / "Desktop" / "output_images"
 
 
 def save_manual_landmarks(image_path, landmarks, output_dir=None):
@@ -1847,8 +1847,7 @@ GUI_PAGE = r"""<!doctype html>
       <input id="maxMoles" type="number" min="0" max="30" value="7">
       <label><input id="saveImages" type="checkbox"> Save output images</label>
       <label>Output directory</label>
-      <input id="outputDir" type="text" value="output" placeholder="/Users/yourname/Desktop/results">
-      <div class="hint">Use a relative folder like output, or a full path anywhere on this computer.</div>
+      <input id="outputDir" type="text" value="" placeholder="Desktop/output_images">
       <div class="row" style="margin-top:14px;">
         <button type="button" id="runButton">Run labeling</button>
         <button type="button" class="warn" id="undoBox">Undo box</button>
